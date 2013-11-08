@@ -149,6 +149,7 @@
 
 #include "SusyEvent.h"
 #include "SusyTriggerEvent.h"
+#include "SusyEventFilter.h"
 
 typedef std::vector<std::string> VString;
 
@@ -296,10 +297,9 @@ private:
   double pfParticleThreshold_;
   double genParticleThreshold_;
 
-  //Photon SC energy MVA regression
+  // Photon SC energy MVA regression
   EGEnergyCorrector scEnergyCorrector_;
 
-  // since we deal with both reco::Track and reco::GsfTrack, the track reference needs to be polymorphic
   typedef std::map<reco::Track const*, unsigned> TrackStore;
   typedef std::map<reco::SuperCluster const*, unsigned> SuperClusterStore;
   typedef std::map<reco::CaloCluster const*, unsigned> CaloClusterStore;
@@ -311,6 +311,9 @@ private:
     CaloClusterStore basicClusters;
     PFCandidateStore pfCandidates;
   } productStore_;
+
+  // Function pointer to the event filter function
+  std::vector<susy::EventFilter> eventFilters_;
 
   susy::Event* susyEvent_;
   TTree*       susyTree_;
@@ -370,6 +373,7 @@ SusyNtuplizer::SusyNtuplizer(const edm::ParameterSet& iConfig) :
   genParticleThreshold_(iConfig.getParameter<double>("genParticleThreshold")),
   scEnergyCorrector_(),
   productStore_(),
+  eventFilters_(),
   susyEvent_(0),
   susyTree_(0),
   triggerEvent_(0)
@@ -635,6 +639,16 @@ SusyNtuplizer::SusyNtuplizer(const edm::ParameterSet& iConfig) :
     susyEvent_->gridParams[*pItr] = 0.;
 
   /*
+    Get the list of event filters to be run on the susy::Event.
+    Only events passing all the filters will be filled to the output tree.
+  */
+  VString eventFilterNames(iConfig.getParameter<VString>("eventFilters"));
+  for(VString::iterator fItr(eventFilterNames.begin()); fItr != eventFilterNames.end(); ++fItr){
+    susy::EventFilter filter(susy::EventFilterDictionary::getEventFilter(*fItr));
+    if(filter) eventFilters_.push_back(filter);
+  }
+
+  /*
     Pass the output tree to the Event object for branch bookings.
   */
   susyEvent_->addOutput(*susyTree_);
@@ -830,6 +844,12 @@ SusyNtuplizer::analyze(edm::Event const& _event, edm::EventSetup const& _eventSe
   fillGenParticles(_event, _eventSetup);
 
   fillTriggerEvent(_event, _eventSetup);
+
+  if(eventFilters_.size() != 0){
+    if(debugLevel_ > 0) edm::LogInfo(name()) << "analyze: running filters on the output event";
+    for(std::vector<susy::EventFilter>::iterator fItr(eventFilters_.begin()); fItr != eventFilters_.end(); ++fItr)
+      if(!(*(*fItr))(*susyEvent_)) return;
+  }
 
   if(debugLevel_ > 0) edm::LogInfo(name()) << "analyze: fill tree at last";
 
