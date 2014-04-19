@@ -23,6 +23,16 @@ Description: Objects definitions used for SusyNtuples
 // Use for initialization of variables that can have a value 0 and are not always filled
 float const BIGVALUE(std::numeric_limits<float>::max());
 
+TString trajectorySeedCollectionNames[susy::nTrajectorySeedCollections] = {
+  "InitialStep",
+  "PixelPairStep",
+  "MixedTripletStep",
+  "PixelLessStep",
+  "TripletElectron",
+  "PixelPairElectron",
+  "StripPairElectron"
+};
+
 // Print utility functions
 std::ostream& indent(std::ostream& os)
 { return os << "\t"; }
@@ -273,6 +283,26 @@ susy::Track::fillRefs(Event const* _evt)
 }
 
 void
+susy::ElectronSeed::Init()
+{
+  trajectorySeedCollection.clear();
+  id[0] = id[1] = 0;
+}
+
+void
+susy::ElectronSeed::Print(std::ostream& os/* = std::cout*/) const
+{
+  indent(os) << "trajectorySeedCollection: " << trajectorySeedCollection << std::endl;
+  indent(os) << "id[0]: " << id[0] << std::endl;
+  indent(os) << "id[1]: " << id[1] << std::endl;
+}
+
+void
+susy::ElectronSeed::fillRefs(Event const* _evt)
+{
+}
+
+void
 susy::Photon::Init()
 {
   fidBit                          = 0;
@@ -369,8 +399,11 @@ susy::Photon::Init()
 
   momentum                       *= 0;
 
+  electronSeedIndices.clear();
+
   superCluster = 0;
   worstOtherVtxChargedHadronIsoVtx = 0;
+  electronSeeds.clear();
 }
 
 void
@@ -467,7 +500,9 @@ susy::Photon::Print(std::ostream& os/* = std::cout*/) const
   
   indent(os) << "MVAregEnergy: " << MVAregEnergy << std::endl;
   indent(os) << "MVAregErr:    " << MVAregErr    << std::endl;
-  
+
+  indent(os) << "electronSeedIndices:" << electronSeedIndices << std::endl;
+
   indent(os) << "momentum: " << momentum << std::endl;
 }
 
@@ -477,8 +512,11 @@ susy::Photon::fillRefs(Event const* _evt)
   if(unsigned(superClusterIndex) < _evt->superClusters.size())
     superCluster = &_evt->superClusters[superClusterIndex];
 
-  if(unsigned(worstOtherVtxChargedHadronIsoVtxIdx) < _evt->vertices.size())
-    worstOtherVtxChargedHadronIsoVtx = &_evt->vertices[worstOtherVtxChargedHadronIsoVtxIdx];
+  worstOtherVtxChargedHadronIsoVtx = worstOtherVtxChargedHadronIsoVtxIdx != -1 ? &_evt->vertices[worstOtherVtxChargedHadronIsoVtxIdx] : 0;
+
+  electronSeeds.resize(nPixelSeeds);
+  for(int i(0); i != nPixelSeeds; ++i)
+    electronSeeds[i] = &_evt->electronSeeds[electronSeedIndices[i]];
 }
 
 void
@@ -1533,12 +1571,14 @@ susy::Event::Init()
   beamSpot                   *= 0;
 
   vertices.clear();
+  pixelVertices.clear();
   tracks.clear();
   superClusters.clear();
   clusters.clear();
   pfParticles.clear();
   pu.clear();
   genParticles.clear();
+  electronSeeds.clear();
 
   for(METMap::iterator itr(metMap.begin()); itr != metMap.end(); ++itr) itr->second.Init();
   for(MuonCollectionMap::iterator itr(muons.begin()); itr != muons.end(); ++itr) itr->second.clear();
@@ -1604,6 +1644,13 @@ susy::Event::Print(std::ostream& os/* = std::cout*/) const
   }
   os << std::endl;
 
+  os << "pixelVertices size(" << pixelVertices.size() << ") ======>" << std::endl;
+  for(unsigned i(0); i != pixelVertices.size(); ++i){
+    os << "[" << i << "] ===>" << std::endl;
+    pixelVertices[i].Print(os);
+  }
+  os << std::endl;
+
   os << "tracks size(" << tracks.size() << ") ======>" << std::endl;
   for(unsigned i(0); i != tracks.size(); ++i){
     os << "[" << i << "] ===>" << std::endl;
@@ -1629,6 +1676,13 @@ susy::Event::Print(std::ostream& os/* = std::cout*/) const
   for(unsigned i(0); i != pfParticles.size(); ++i){
     os << "[" << i << "] ===>" << std::endl;
     pfParticles[i].Print(os);
+  }
+  os << std::endl;
+
+  os << "electronSeeds: ======>" << std::endl;
+  for(unsigned i(0); i != electronSeeds.size(); ++i){
+    os << "[" << i << "] ===>" << std::endl;
+    electronSeeds[i].Print(os);
   }
   os << std::endl;
 
@@ -1777,12 +1831,14 @@ susy::Event::setInput(TTree& _tree)
 
   if(_tree.GetBranchStatus("beamSpot.")) _tree.SetBranchAddress("beamSpot.", new TVector3*(&beamSpot));
   if(_tree.GetBranchStatus("vertices")) _tree.SetBranchAddress("vertices", new VertexCollection*(&vertices));
+  if(_tree.GetBranchStatus("pixelVertices")) _tree.SetBranchAddress("pixelVertices", new VertexCollection*(&pixelVertices));
   if(_tree.GetBranchStatus("tracks")) _tree.SetBranchAddress("tracks", new TrackCollection*(&tracks));
   if(_tree.GetBranchStatus("superClusters")) _tree.SetBranchAddress("superClusters", new SuperClusterCollection*(&superClusters));
   if(_tree.GetBranchStatus("clusters")) _tree.SetBranchAddress("clusters", new ClusterCollection*(&clusters));
   if(_tree.GetBranchStatus("pfParticles")) _tree.SetBranchAddress("pfParticles", new PFParticleCollection*(&pfParticles));
   if(_tree.GetBranchStatus("pu")) _tree.SetBranchAddress("pu", new PUSummaryInfoCollection*(&pu));
   if(_tree.GetBranchStatus("genParticles")) _tree.SetBranchAddress("genParticles", new ParticleCollection*(&genParticles));
+  if(_tree.GetBranchStatus("electronSeeds")) _tree.SetBranchAddress("electronSeeds", new ElectronSeedCollection*(&electronSeeds));
 
   metMap.clear();
   muons.clear();
@@ -1963,12 +2019,15 @@ susy::Event::releaseTree(TTree& _tree)
 
   TVector3** beamSpotP(_tree.GetBranchStatus("beamSpot.") ? reinterpret_cast<TVector3**>(_tree.FindBranch("beamSpot.")->GetAddress()) : 0);
   VertexCollection** verticesP(_tree.GetBranchStatus("vertices") ? reinterpret_cast<VertexCollection**>(_tree.FindBranch("vertices")->GetAddress()) : 0);
+  VertexCollection** pixelVerticesP(_tree.GetBranchStatus("pixelVertices") ? reinterpret_cast<VertexCollection**>(_tree.FindBranch("pixelVertices")->GetAddress()) : 0);
   TrackCollection** tracksP(_tree.GetBranchStatus("tracks") ? reinterpret_cast<TrackCollection**>(_tree.FindBranch("tracks")->GetAddress()) : 0);
   SuperClusterCollection** superClustersP(_tree.GetBranchStatus("superClusters") ? reinterpret_cast<SuperClusterCollection**>(_tree.FindBranch("superClusters")->GetAddress()) : 0);
   ClusterCollection** clustersP(_tree.GetBranchStatus("clusters") ? reinterpret_cast<ClusterCollection**>(_tree.FindBranch("clusters")->GetAddress()) : 0);
   PFParticleCollection** pfParticlesP(_tree.GetBranchStatus("pfParticles") ? reinterpret_cast<PFParticleCollection**>(_tree.FindBranch("pfParticles")->GetAddress()) : 0);
   PUSummaryInfoCollection** puP(_tree.GetBranchStatus("pu") ? reinterpret_cast<PUSummaryInfoCollection**>(_tree.FindBranch("pu")->GetAddress()) : 0);
   ParticleCollection** genParticlesP(_tree.GetBranchStatus("genParticles") ? reinterpret_cast<ParticleCollection**>(_tree.FindBranch("genParticles")->GetAddress()) : 0);
+
+  ElectronSeedCollection** electronSeedsP(_tree.GetBranchStatus("electronSeeds") ? reinterpret_cast<ElectronSeedCollection**>(_tree.FindBranch("electronSeeds")->GetAddress()) : 0);
 
   TObjArray* branches(_tree.GetListOfBranches());
   std::vector<MET**> metPs;
@@ -2011,12 +2070,14 @@ susy::Event::releaseTree(TTree& _tree)
     
   delete beamSpotP;
   delete verticesP;
+  delete pixelVerticesP;
   delete tracksP;
   delete superClustersP;
   delete clustersP;
   delete pfParticlesP;
   delete puP;
   delete genParticlesP;
+  delete electronSeedsP;
   for(unsigned i(0); i != metPs.size(); ++i) delete metPs[i];
   for(unsigned i(0); i != muonPs.size(); ++i) delete muonPs[i];
   for(unsigned i(0); i != electronPs.size(); ++i) delete electronPs[i];
@@ -2060,12 +2121,14 @@ susy::Event::copyEvent(Event const& _orig)
   hltMap.copy(_orig.hltMap);
 
   vertices               = _orig.vertices;
+  pixelVertices          = _orig.pixelVertices;
   tracks                 = _orig.tracks;
   superClusters          = _orig.superClusters;
   clusters               = _orig.clusters;
   pfParticles            = _orig.pfParticles;
   pu                     = _orig.pu;
   genParticles           = _orig.genParticles;
+  electronSeeds          = _orig.electronSeeds;
 
   // Loop over collections in _orig. If the same collection exists, copy the value. If not, create (done automatically).
   // If a collection in this object does not exist in _orig, clear it (but don't delete the object).
@@ -2109,6 +2172,8 @@ susy::Event::copyEvent(Event const& _orig)
     gridParams[oItr->first] = oItr->second;
   for(std::map<TString, Float_t>::iterator itr(gridParams.begin()); itr != gridParams.end(); ++itr)
     if(_orig.gridParams.find(itr->first) == _orig.gridParams.end()) itr->second = 0.;
+
+  fillRefs();
 }
 
 

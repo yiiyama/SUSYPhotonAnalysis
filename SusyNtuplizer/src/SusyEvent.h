@@ -1,16 +1,3 @@
-// -*- C++ -*-
-//
-// Package:    SusyNtuplizer
-// Class:      SusyEvent.h
-//
-/*
-
- Description: Objects definitions used for SusyNtuples
-
- Implementation:
-
-*/
-
 #ifndef SusyEvent_h
 #define SusyEvent_h
 
@@ -79,6 +66,17 @@ namespace susy {
     kPUJetIdCutBased,
     kPUJetIdSimple,
     nPUJetIdAlgorithms
+  };
+
+  enum TrajectorySeedCollections {
+    kInitialStep,
+    kPixelPairStep,
+    kMixedTripletStep,
+    kPixelLessStep,
+    kTripletElectron,
+    kPixelPairElectron,
+    kStripPairElectron,
+    nTrajectorySeedCollections
   };
 
   class Event; // forward declaration for fillRefs methods
@@ -289,6 +287,20 @@ namespace susy {
   };
 
 
+  class ElectronSeed {
+    
+  public:
+    ElectronSeed() { Init(); }
+    ~ElectronSeed() { Init(); }
+    void Init();
+    void Print(std::ostream& = std::cout) const;
+    void fillRefs(Event const*);
+
+    std::vector<UChar_t> trajectorySeedCollection;
+    UInt_t id[2];
+  };
+
+
   class Photon {
 
   public:
@@ -413,11 +425,13 @@ namespace susy {
     Double_t       MVAregEnergy;
     Double_t       MVAregErr;
 
+    std::vector<unsigned short> electronSeedIndices;
+
     TLorentzVector momentum;
 
     const SuperCluster* superCluster; //! Transient member - only filled at analysis time
     const Vertex*  worstOtherVtxChargedHadronIsoVtx; //! Transient member - only filled at analysis time
-
+    std::vector<const ElectronSeed*> electronSeeds; //!
   };
 
 
@@ -944,6 +958,7 @@ namespace susy {
   typedef std::vector<SuperCluster> SuperClusterCollection;
   typedef std::vector<Cluster> ClusterCollection;
   typedef std::vector<Particle> ParticleCollection;
+  typedef std::vector<ElectronSeed> ElectronSeedCollection;
   typedef std::vector<Muon> MuonCollection;
   typedef std::vector<Electron> ElectronCollection;
   typedef std::vector<Photon> PhotonCollection;
@@ -1018,10 +1033,12 @@ namespace susy {
     TriggerMap                                     hltMap;
                                                    
     VertexCollection                               vertices;
+    VertexCollection                               pixelVertices;
     TrackCollection                                tracks;
     SuperClusterCollection                         superClusters;          // only selected super clusters associated with photons and electrons
     ClusterCollection                              clusters;               // only selected basic clusters associated with super clusters
     PFParticleCollection                           pfParticles;
+    ElectronSeedCollection                         electronSeeds;
 
     METMap                                         metMap;
     MuonCollectionMap                              muons;

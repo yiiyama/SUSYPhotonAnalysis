@@ -46,6 +46,8 @@
 #pragma link C++ class susy::SuperClusterCollection+;
 #pragma link C++ class susy::Track+;
 #pragma link C++ class susy::TrackCollection+;
+#pragma link C++ class susy::ElectronSeed+;
+#pragma link C++ class susy::ElectronSeedCollection+;
 #pragma link C++ class susy::Muon+;
 #pragma link C++ class susy::MuonCollection+;
 #pragma link C++ class susy::Electron+;
@@ -70,6 +72,7 @@
 #pragma link C++ class std::vector<const susy::Cluster*>+;
 #pragma link C++ class std::vector<const susy::Track*>+;
 #pragma link C++ class std::vector<const susy::PFParticle*>+;
+#pragma link C++ class std::vector<const susy::ElectronSeed*>+;
 
 #pragma link C++ class std::map<TString, susy::MET>+;
 #pragma link C++ class std::map<TString, susy::MuonCollection>+;

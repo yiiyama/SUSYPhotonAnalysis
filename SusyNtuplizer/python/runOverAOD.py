@@ -891,6 +891,7 @@ def configure( dataset, sourceNames=[], hltPaths=[], maxEvents = -1, outputName 
         process.susyNtuplizer.metFilters.HcalLaserRECOUserStep.run = False
 
     if dataset in ['53x13July2012', '53x24Aug2012']:
+        process.susyNtuplizer.metFilters.EcalLaserCorr.default = True
         process.susyNtuplizer.storeLumiInfo = cms.bool(False)
 
     if dataset == '53x22Jan2013':

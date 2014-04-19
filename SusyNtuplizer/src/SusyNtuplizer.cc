@@ -56,6 +56,7 @@
 #include "DataFormats/EgammaReco/interface/BasicCluster.h"
 #include "DataFormats/EgammaReco/interface/SuperCluster.h"
 #include "DataFormats/EgammaReco/interface/SuperClusterFwd.h"
+#include "DataFormats/EgammaReco/interface/ElectronSeed.h"
 
 #include "DataFormats/GsfTrackReco/interface/GsfTrack.h"
 #include "DataFormats/EgammaCandidates/interface/GsfElectron.h"
@@ -88,6 +89,11 @@
 
 #include "DataFormats/ParticleFlowCandidate/interface/PFCandidateFwd.h"
 #include "DataFormats/ParticleFlowCandidate/interface/PFCandidate.h"
+
+#include "DataFormats/TrajectorySeed/interface/TrajectorySeed.h"
+#include "DataFormats/TrajectorySeed/interface/TrajectorySeedCollection.h"
+#include "DataFormats/DetId/interface/DetId.h"
+#include "DataFormats/GeometryVector/interface/GlobalPoint.h"
 
 // for ecal rechit related
 #include "DataFormats/EcalRecHit/interface/EcalRecHitCollections.h"
@@ -125,8 +131,6 @@
 #include "PhysicsTools/Utilities/interface/EventFilterFromListStandAlone.h"
 #include "DataFormats/METReco/interface/BeamHaloSummary.h"
 
-
-
 // system include files
 #include <memory>
 #include <string>
@@ -145,6 +149,8 @@
 #include "SusyEvent.h"
 #include "SusyTriggerEvent.h"
 #include "SusyEventFilter.h"
+
+extern TString trajectorySeedCollectionNames[susy::nTrajectorySeedCollections];
 
 typedef std::vector<std::string> VString;
 
@@ -168,7 +174,9 @@ private:
   void fillRhos(edm::Event const&, edm::EventSetup const&);
   void fillTriggerMaps(edm::Event const&, edm::EventSetup const&);
   void fillVertices(edm::Event const&, edm::EventSetup const&);
+  void fillPixelVertices(edm::Event const&, edm::EventSetup const&);
   void fillGeneralTracks(edm::Event const&, edm::EventSetup const&);
+  void fillTrajectorySeeds(edm::Event const&, edm::EventSetup const&);
   void fillMetFilters(edm::Event const&, edm::EventSetup const&);
   void fillPFParticles(edm::Event const&, edm::EventSetup const&);
   void fillGenInfo(edm::Event const&, edm::EventSetup const&);
@@ -188,6 +196,7 @@ private:
   unsigned fillSuperCluster(reco::SuperCluster const*);
   unsigned fillCluster(reco::CaloCluster const*);
   unsigned fillPFParticle(reco::PFCandidate const*, edm::ProductID const* = 0);
+  unsigned fillElectronSeed(reco::ElectronSeed const*);
 
   unsigned fillTrackCommon(reco::Track const*, bool&);
 
@@ -201,6 +210,7 @@ private:
 
   std::string lumiSummaryTag_;
   std::string vtxCollectionTag_;
+  std::string pixVtxCollectionTag_;
   std::string trackCollectionTag_;
   std::string pfCandidateCollectionTag_;
   std::string genCollectionTag_;
@@ -222,6 +232,7 @@ private:
   std::map<std::string, std::pair<std::string, std::string> > jetFlavourMatchingTags_;
   std::map<std::string, VString> puJetIdCollectionTags_;
   std::string pfPUCandidatesTag_;
+  std::string trajectorySeedsTag_[susy::nTrajectorySeedCollections];
   std::string photonSCRegressionWeights_;
   std::map<unsigned, std::string> metFilterTags_;
 
@@ -265,6 +276,8 @@ private:
   // default : false
   bool storeGenInfo_;
 
+  bool storeTrajectorySeeds_;
+
   // flag for storing generalTracks collection
   // default : false
   bool storeGeneralTracks_;
@@ -292,19 +305,26 @@ private:
   double pfParticleThreshold_;
   double genParticleThreshold_;
 
-  // Photon SC energy MVA regression
+  // GenParticle Pt threshold
+  double genParticleThreshold_;
+
+  //Photon SC energy MVA regression
   EGEnergyCorrector scEnergyCorrector_;
 
   typedef std::map<reco::Track const*, unsigned> TrackStore;
   typedef std::map<reco::SuperCluster const*, unsigned> SuperClusterStore;
   typedef std::map<reco::CaloCluster const*, unsigned> CaloClusterStore;
   typedef std::map<reco::PFCandidate const*, unsigned> PFCandidateStore;
+  typedef std::map<TrajectorySeed const*, std::pair<unsigned, unsigned> > TrajectorySeedStore;
+  typedef std::map<std::pair<uint32_t, uint32_t>, unsigned> ElectronSeedStore;
   struct ProductStore {
-    void clear() { tracks.clear(); superClusters.clear(); basicClusters.clear(); pfCandidates.clear(); }
+    void clear() { tracks.clear(); superClusters.clear(); basicClusters.clear(); pfCandidates.clear(); trajectorySeeds.clear(); electronSeeds.clear(); }
     TrackStore tracks;
     SuperClusterStore superClusters;
     CaloClusterStore basicClusters;
     PFCandidateStore pfCandidates;
+    TrajectorySeedStore trajectorySeeds;
+    ElectronSeedStore electronSeeds;
   } productStore_;
 
   // Function pointer to the event filter function
@@ -322,6 +342,7 @@ private:
 SusyNtuplizer::SusyNtuplizer(const edm::ParameterSet& iConfig) :
   lumiSummaryTag_(iConfig.getParameter<std::string>("lumiSummaryTag")),
   vtxCollectionTag_(iConfig.getParameter<std::string>("vtxCollectionTag")),
+  pixVtxCollectionTag_(iConfig.getParameter<std::string>("pixVtxCollectionTag")),
   trackCollectionTag_(iConfig.getParameter<std::string>("trackCollectionTag")),
   pfCandidateCollectionTag_(iConfig.getParameter<std::string>("pfCandidateCollectionTag")),
   genCollectionTag_(iConfig.getParameter<std::string>("genCollectionTag")),
@@ -543,6 +564,21 @@ SusyNtuplizer::SusyNtuplizer(const edm::ParameterSet& iConfig) :
       else if(algos[iA] == "simple") collectionTags[susy::kPUJetIdSimple] = tag + ":simple";
     }
   }
+
+  std::bitset<susy::nTrajectorySeedCollections> tagsSet;
+  edm::ParameterSet const& trajectorySeedConfig(iConfig.getParameterSet("trajectorySeedTags"));
+  VString trajectorySeedNames(trajectorySeedConfig.getParameterNames());
+  for(VString::iterator tItr(trajectorySeedNames.begin()); tItr != trajectorySeedNames.end(); ++tItr){
+    for(unsigned iC(0); iC != susy::nTrajectorySeedCollections; ++iC){
+      if(*tItr == trajectorySeedCollectionNames[iC]){
+        trajectorySeedsTag_[iC] = trajectorySeedConfig.getParameter<std::string>(*tItr);
+	tagsSet.set(iC);
+        break;
+      }
+    }
+  }
+
+  storeTrajectorySeeds_ = tagsSet.count() == susy::nTrajectorySeedCollections;
 
   /*
     Open the output file.
@@ -814,6 +850,8 @@ SusyNtuplizer::analyze(edm::Event const& _event, edm::EventSetup const& _eventSe
 
   fillGeneralTracks(_event, _eventSetup);
 
+  fillTrajectorySeeds(_event, _eventSetup);
+
   fillMetFilters(_event, _eventSetup);
 
   fillMet(_event, _eventSetup);
@@ -833,6 +871,8 @@ SusyNtuplizer::analyze(edm::Event const& _event, edm::EventSetup const& _eventSe
   fillPFParticles(_event, _eventSetup);
 
   fillVertices(_event, _eventSetup);
+
+  fillPixelVertices(_event, _eventSetup);
 
   fillGenInfo(_event, _eventSetup);
 
@@ -1025,6 +1065,35 @@ SusyNtuplizer::fillVertices(edm::Event const& _event, edm::EventSetup const&)
 }
 
 void
+SusyNtuplizer::fillPixelVertices(edm::Event const& _event, edm::EventSetup const&)
+{
+  if(pixVtxCollectionTag_ == "") return;
+
+  if(debugLevel_ > 0) edm::LogInfo(name()) << "fillPixelVertices";
+
+  edm::Handle<reco::VertexCollection> vtxH;
+  _event.getByLabel(edm::InputTag(pixVtxCollectionTag_), vtxH);
+  reco::VertexCollection const& vertices(*vtxH);
+
+  VertexHigherPtSquared sumPt2Calculator;
+
+  susyEvent_->pixelVertices.resize(vertices.size());
+
+  for(unsigned iV(0); iV != vertices.size(); ++iV){
+    reco::Vertex const& recoVtx(vertices[iV]);
+    susy::Vertex& susyVtx(susyEvent_->pixelVertices[iV]);
+
+    susyVtx.tracksSize = recoVtx.tracksSize();
+    susyVtx.sumPt2     = sumPt2Calculator.sumPtSquared(recoVtx);
+    susyVtx.chi2       = recoVtx.chi2();
+    susyVtx.ndof       = recoVtx.ndof();
+    susyVtx.position.SetXYZ(recoVtx.x(), recoVtx.y(), recoVtx.z());
+
+    if(debugLevel_ > 2) edm::LogInfo(name()) << "vtx" << iV << " : " << recoVtx.x() << ", " << recoVtx.y() << ", " << recoVtx.z();
+  }
+}
+
+void
 SusyNtuplizer::fillGeneralTracks(edm::Event const& _event, edm::EventSetup const&)
 {
   if(trackCollectionTag_ == "") return;
@@ -1040,6 +1109,23 @@ SusyNtuplizer::fillGeneralTracks(edm::Event const& _event, edm::EventSetup const
   for(reco::TrackCollection::const_iterator tItr(trackH->begin()); tItr != trackH->end(); ++tItr, ++iTrk){
     if(tItr->pt() < 1.0) continue;
     fillTrack(&*tItr);
+  }
+}
+
+void
+SusyNtuplizer::fillTrajectorySeeds(edm::Event const& _event, edm::EventSetup const& _eventSetup)
+{
+  if(!storeTrajectorySeeds_) return;
+
+  if(debugLevel_ > 0) edm::LogInfo(name()) << "fillTrajectorySeeds";
+
+  for(unsigned iT(0); iT != susy::nTrajectorySeedCollections; ++iT){
+    edm::Handle<TrajectorySeedCollection> seedH;
+    _event.getByLabel(edm::InputTag(trajectorySeedsTag_[iT]), seedH);
+
+    unsigned iSeed(0);
+    for(TrajectorySeedCollection::const_iterator sItr(seedH->begin()); sItr != seedH->end(); ++sItr, ++iSeed)
+      productStore_.trajectorySeeds[&*sItr] = std::pair<unsigned, unsigned>(iT, iSeed);
   }
 }
 
@@ -1728,7 +1814,12 @@ SusyNtuplizer::fillPhotons(edm::Event const& _event, edm::EventSetup const& _eve
 
       pho.superClusterIndex = fillSuperCluster(scRef.get());
 
-      pho.nPixelSeeds = it->electronPixelSeeds().size();
+      reco::ElectronSeedRefVector electronSeeds(it->electronPixelSeeds());
+      pho.nPixelSeeds = electronSeeds.size();
+      pho.electronSeedIndices.resize(pho.nPixelSeeds);
+      for(int iS(0); iS != pho.nPixelSeeds; ++iS)
+        pho.electronSeedIndices[iS] = fillElectronSeed(electronSeeds[iS].get());
+
       pho.passelectronveto = !ConversionTools::hasMatchedPromptElectron(it->superCluster(), hVetoElectrons, hVetoConversions, beamSpot);
 
       // conversion Id
@@ -2732,25 +2823,24 @@ SusyNtuplizer::fillSuperCluster(reco::SuperCluster const* _scPtr)
   std::pair<SuperClusterStore::iterator, bool> insertion(productStore_.superClusters.insert(SuperClusterStore::value_type(_scPtr, productStore_.superClusters.size())));
 
   if(!insertion.second) return insertion.first->second;
-  else{
-    susy::SuperCluster sc;
 
-    sc.energy = _scPtr->energy();
-    sc.preshowerEnergy = _scPtr->preshowerEnergy();
-    sc.phiWidth = _scPtr->phiWidth();
-    sc.etaWidth = _scPtr->etaWidth();
-    sc.position.SetXYZ(_scPtr->x(),_scPtr->y(),_scPtr->z());
+  susy::SuperCluster sc;
 
-    for(reco::CaloClusterPtrVector::const_iterator it = _scPtr->clustersBegin(); it != _scPtr->clustersEnd(); it++){
-      unsigned index(fillCluster(it->get()));
-      sc.basicClusterIndices.push_back(index);
-      if(_scPtr->seed() == *it) sc.seedClusterIndex = index;
-    }
+  sc.energy = _scPtr->energy();
+  sc.preshowerEnergy = _scPtr->preshowerEnergy();
+  sc.phiWidth = _scPtr->phiWidth();
+  sc.etaWidth = _scPtr->etaWidth();
+  sc.position.SetXYZ(_scPtr->x(),_scPtr->y(),_scPtr->z());
 
-    susyEvent_->superClusters.push_back(sc);
-
-    return susyEvent_->superClusters.size() - 1;
+  for(reco::CaloClusterPtrVector::const_iterator it = _scPtr->clustersBegin(); it != _scPtr->clustersEnd(); it++){
+    unsigned index(fillCluster(it->get()));
+    sc.basicClusterIndices.push_back(index);
+    if(_scPtr->seed() == *it) sc.seedClusterIndex = index;
   }
+
+  susyEvent_->superClusters.push_back(sc);
+
+  return susyEvent_->superClusters.size() - 1;
 }
 
 unsigned
@@ -2766,17 +2856,16 @@ SusyNtuplizer::fillCluster(reco::CaloCluster const* _clPtr)
   std::pair<CaloClusterStore::iterator, bool> insertion(productStore_.basicClusters.insert(CaloClusterStore::value_type(_clPtr, productStore_.basicClusters.size())));
 
   if(!insertion.second) return insertion.first->second;
-  else{
-    susy::Cluster cl;
 
-    cl.energy = _clPtr->energy();
-    cl.position.SetXYZ(_clPtr->x(),_clPtr->y(),_clPtr->z());
-    cl.nCrystals = _clPtr->size();
+  susy::Cluster cl;
 
-    susyEvent_->clusters.push_back(cl);
+  cl.energy = _clPtr->energy();
+  cl.position.SetXYZ(_clPtr->x(),_clPtr->y(),_clPtr->z());
+  cl.nCrystals = _clPtr->size();
 
-    return susyEvent_->clusters.size() - 1;
-  }
+  susyEvent_->clusters.push_back(cl);
+
+  return susyEvent_->clusters.size() - 1;
 }
 
 unsigned
@@ -2813,21 +2902,71 @@ SusyNtuplizer::fillPFParticle(reco::PFCandidate const* _partPtr, edm::ProductID 
   std::pair<PFCandidateStore::iterator, bool> insertion(productStore_.pfCandidates.insert(PFCandidateStore::value_type(storeKey, productStore_.pfCandidates.size())));
 
   if(!insertion.second) return insertion.first->second;
-  else{
-    susy::PFParticle pf;
 
-    pf.pdgId         = _partPtr->translateTypeToPdgId(_partPtr->particleId());
-    pf.charge        = _partPtr->charge();
-    pf.ecalEnergy    = _partPtr->ecalEnergy();
-    pf.hcalEnergy    = _partPtr->hcalEnergy();
+  susy::PFParticle pf;
 
-    pf.vertex.SetXYZ(_partPtr->vx(),_partPtr->vy(),_partPtr->vz());
-    pf.momentum.SetXYZT(_partPtr->px(),_partPtr->py(),_partPtr->pz(),_partPtr->energy());
+  pf.pdgId         = _partPtr->translateTypeToPdgId(_partPtr->particleId());
+  pf.charge        = _partPtr->charge();
+  pf.ecalEnergy    = _partPtr->ecalEnergy();
+  pf.hcalEnergy    = _partPtr->hcalEnergy();
 
-    susyEvent_->pfParticles.push_back(pf);
+  pf.vertex.SetXYZ(_partPtr->vx(),_partPtr->vy(),_partPtr->vz());
+  pf.momentum.SetXYZT(_partPtr->px(),_partPtr->py(),_partPtr->pz(),_partPtr->energy());
 
-    return susyEvent_->pfParticles.size() - 1;
+  susyEvent_->pfParticles.push_back(pf);
+
+  return susyEvent_->pfParticles.size() - 1;
+}
+
+unsigned
+SusyNtuplizer::fillElectronSeed(reco::ElectronSeed const* _seedPtr)
+{
+  if(debugLevel_ > 2) edm::LogInfo(name()) << "fillElectronSeed";
+
+  if(susyEvent_->electronSeeds.size() != productStore_.electronSeeds.size())
+    throw cms::Exception("RuntimeError") << "Number of buffered electron seeds does not match the number of electron seeds in the susyEvent";
+
+  TrajectorySeed::range recHitBounds(_seedPtr->recHits());
+
+  std::pair<uint32_t, uint32_t> idPair;
+  unsigned pos(0);
+  TrajectorySeed::const_iterator hitItr(recHitBounds.first);
+  while(pos != 8 && ((_seedPtr->hitsMask() >> pos++) & 1) == 0) ++hitItr;
+  if(pos == 8)
+    throw cms::Exception("RuntimeError") << "Electronseed hitMask ill-formatted";
+  idPair.first = hitItr->rawId();
+  ++hitItr;
+  while(pos != 8 && ((_seedPtr->hitsMask() >> pos++) & 1) == 0) ++hitItr;
+  if(pos == 8)
+    throw cms::Exception("RuntimeError") << "Electronseed hitMask ill-formatted";
+  idPair.second = hitItr->rawId();
+
+  unsigned newIndex(productStore_.electronSeeds.size());
+
+  std::pair<ElectronSeedStore::iterator, bool> insertion(productStore_.electronSeeds.insert(ElectronSeedStore::value_type(idPair, newIndex)));
+  if(!insertion.second) return insertion.first->second;
+
+  susyEvent_->electronSeeds.resize(newIndex + 1);
+  susy::ElectronSeed& seed(susyEvent_->electronSeeds.back());
+
+  seed.id[0] = idPair.first;
+  seed.id[1] = idPair.second;
+
+  for(TrajectorySeedStore::const_iterator tItr(productStore_.trajectorySeeds.begin()); tItr != productStore_.trajectorySeeds.end(); ++tItr){
+    TrajectorySeed const& tSeed(*tItr->first);
+
+    unsigned nMatch(0);
+    TrajectorySeed::range bounds(tSeed.recHits());
+    for(TrajectorySeed::const_iterator itr(bounds.first); itr != bounds.second; ++itr){
+      if(itr->rawId() == idPair.first || itr->rawId() == idPair.second)
+        ++nMatch;
+    }
+    if(nMatch != 2) continue;
+
+    seed.trajectorySeedCollection.push_back(tItr->second.first);
   }
+
+  return newIndex;
 }
 
 unsigned
@@ -2843,26 +2982,25 @@ SusyNtuplizer::fillTrackCommon(reco::Track const* _trkPtr, bool& _existed)
   _existed = !insertion.second;
 
   if(_existed) return insertion.first->second;
-  else{
-    susy::Track track;
 
-    track.algorithm = _trkPtr->algo();
-    track.quality = _trkPtr->qualityMask();
+  susy::Track track;
 
-    track.chi2 = _trkPtr->chi2();
-    track.ndof = _trkPtr->ndof();
+  track.algorithm = _trkPtr->algo();
+  track.quality = _trkPtr->qualityMask();
 
-    track.numberOfValidHits        = _trkPtr->hitPattern().numberOfValidHits();
-    track.numberOfValidTrackerHits = _trkPtr->hitPattern().numberOfValidTrackerHits();
-    track.numberOfValidMuonHits    = _trkPtr->hitPattern().numberOfValidMuonHits();
-    track.numberOfValidPixelHits   = _trkPtr->hitPattern().numberOfValidPixelHits();
-    track.numberOfValidStripHits   = _trkPtr->hitPattern().numberOfValidStripHits();
-    track.vertex.SetXYZ(_trkPtr->vx(),_trkPtr->vy(),_trkPtr->vz());
+  track.chi2 = _trkPtr->chi2();
+  track.ndof = _trkPtr->ndof();
 
-    susyEvent_->tracks.push_back(track);
+  track.numberOfValidHits        = _trkPtr->hitPattern().numberOfValidHits();
+  track.numberOfValidTrackerHits = _trkPtr->hitPattern().numberOfValidTrackerHits();
+  track.numberOfValidMuonHits    = _trkPtr->hitPattern().numberOfValidMuonHits();
+  track.numberOfValidPixelHits   = _trkPtr->hitPattern().numberOfValidPixelHits();
+  track.numberOfValidStripHits   = _trkPtr->hitPattern().numberOfValidStripHits();
+  track.vertex.SetXYZ(_trkPtr->vx(),_trkPtr->vy(),_trkPtr->vz());
 
-    return susyEvent_->tracks.size() - 1;
-  }
+  susyEvent_->tracks.push_back(track);
+
+  return susyEvent_->tracks.size() - 1;
 }
 
 void

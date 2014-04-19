@@ -38,3 +38,5 @@ opt.register(
 opt.parseArguments()
 
 process = configure(dataset = opt.dataset, sourceNames = opt.inputFiles, hltPaths = opt.hltPaths, maxEvents = opt.maxEvents, outputName = opt.outputName)
+
+process.susyNtuplizer.photonCollectionTags = ['photons']

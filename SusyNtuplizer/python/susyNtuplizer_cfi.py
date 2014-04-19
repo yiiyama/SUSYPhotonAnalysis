@@ -3,7 +3,17 @@ import FWCore.ParameterSet.Config as cms
 susyNtuplizer = cms.EDAnalyzer('SusyNtuplizer',
     lumiSummaryTag = cms.string("lumiProducer"),
     vtxCollectionTag = cms.string("offlinePrimaryVertices"),
+    pixVtxCollectionTag = cms.string("pixelVertices"),
     trackCollectionTag = cms.string("generalTracks"),
+    trajectorySeedTags = cms.PSet(
+        InitialStep = cms.string('initialStepSeeds'),
+        PixelPairStep = cms.string('pixelPairStepSeeds'),
+        MixedTripletStep = cms.string('mixedTripletStepSeeds'),
+        PixelLessStep = cms.string('pixelLessStepSeeds'),
+        TripletElectron = cms.string('tripletElectronSeeds'),
+        PixelPairElectron = cms.string('pixelPairElectronSeeds'),
+        StripPairElectron = cms.string('stripPairElectronSeeds')
+    ),
     pfCandidateCollectionTag = cms.string("particleFlow"),
     muonCollectionTags = cms.vstring(
         "muons",
